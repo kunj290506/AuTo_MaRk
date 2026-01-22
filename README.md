@@ -1,6 +1,6 @@
 # AutoMark - High Accuracy Image Annotation Tool
 
-**AutoMark** is a premium, AI-powered automatic image annotation tool designed to generate high-quality datasets instantly. It uses the state-of-the-art **SAM 2.1 Large (Segment Anything Model)** to provide industrial-grade detection accuracy.
+**AutoMark Pro** is a premium, AI-powered automatic image annotation tool designed to generate high-quality datasets instantly. It uses the state-of-the-art **SAM 2.1 Large (Segment Anything Model)** to provide industrial-grade detection accuracy.
 
 ## Key Features
 
