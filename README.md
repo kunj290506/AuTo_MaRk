@@ -52,6 +52,4 @@
 
 MIT License
 
-## Contributors
 
-- Kunj
