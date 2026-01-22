@@ -132,8 +132,140 @@ def draw_box(img, x1, y1, x2, y2, label):
 async def root():
     return {"message": "AutoMark API", "model": "SAM", "device": DEVICE}
 
+from fastapi import BackgroundTasks
+
+def process_session(session_id, session_dir, session_out, images):
+    """Background task for heavy inference"""
+    try:
+        progress_store[session_id] = {
+            "current": 0, 
+            "total": len(images), 
+            "started": time.time(),
+            "eta": 0,
+            "avg_time": 0,
+            "elapsed": 0
+        }
+        
+        processed = []
+        class_registry = {}
+        next_id = 0
+        start_time = time.time()
+        
+        print(f"SESSION {session_id}: STARTING PROCESSING {len(images)} IMAGES")
+
+        for idx, img_path in enumerate(images):
+            try:
+                # Update progress info
+                elapsed = time.time() - start_time
+                avg_time = elapsed / (idx + 1) if idx > 0 else 0
+                remaining = (len(images) - (idx + 1)) * avg_time
+                
+                progress_store[session_id].update({
+                    "current": idx,
+                    "eta": remaining,
+                    "avg_time": avg_time,
+                    "elapsed": elapsed
+                })
+                
+                img = cv2.imread(str(img_path))
+                if img is None: continue
+                
+                h, w = img.shape[:2]
+                
+                # Get class from filename
+                file_class = get_class_from_filename(img_path.name)
+                
+                # Register Class
+                if file_class not in class_registry:
+                    class_registry[file_class] = next_id
+                    next_id += 1
+                class_id = class_registry[file_class]
+                
+                # --- VERIFICATION LOG ---
+                print(f"[{idx+1}/{len(images)}] Processing: {img_path.name} --> Class: '{file_class}' (ID: {class_id})")
+                
+                # Run SAM detection - FASTEST SETTINGS
+                results = model(str(img_path), verbose=False, device=DEVICE, retina_masks=False)
+                
+                labels = []
+                
+                # Ultralytics SAM results
+                for result in results:
+                    if result.masks is None: continue
+                    masks = result.masks.data.cpu().numpy()
+                    
+                    for mask in masks:
+                        pos_y, pos_x = np.where(mask > 0.5)
+                        if len(pos_x) == 0: continue
+                        
+                        x1, x2 = int(np.min(pos_x)), int(np.max(pos_x))
+                        y1, y2 = int(np.min(pos_y)), int(np.max(pos_y))
+                        
+                        # YOLO format
+                        x_center = ((x1 + x2) / 2) / w
+                        y_center = ((y1 + y2) / 2) / h
+                        box_w = (x2 - x1) / w
+                        box_h = (y2 - y1) / h
+                        
+                        x_center = max(0, min(1, x_center))
+                        y_center = max(0, min(1, y_center))
+                        box_w = max(0, min(1, box_w))
+                        box_h = max(0, min(1, box_h))
+                        
+                        labels.append(f"{class_id} {x_center:.6f} {y_center:.6f} {box_w:.6f} {box_h:.6f}")
+                        draw_box(img, x1, y1, x2, y2, file_class)
+                
+                # Save outputs
+                shutil.copy2(img_path, session_out / "images" / img_path.name)
+                with open(session_out / "labels" / (img_path.stem + ".txt"), 'w') as f:
+                    f.write('\n'.join(labels))
+                cv2.imwrite(str(session_out / "annotated" / img_path.name), img)
+                
+                processed.append({"filename": img_path.name, "detections": len(labels)})
+                progress_store[session_id]["current"] = idx + 1
+                
+            except Exception as e:
+                print(f"Error processing {img_path}: {e}")
+        
+        # Post-loop generation
+        sorted_classes = sorted(class_registry.items(), key=lambda x: x[1])
+        with open(session_out / "classes.txt", 'w') as f:
+            for name, _ in sorted_classes:
+                f.write(f"{name}\n")
+        
+        with open(session_out / "dataset.yaml", 'w') as f:
+            f.write(f"path: ./\ntrain: images\nval: images\nnc: {len(class_registry)}\nnames:\n")
+            for name, cid in sorted_classes:
+                f.write(f"  {cid}: '{name}'\n")
+        
+        # Create ZIP
+        zip_path = session_out / "dataset.zip"
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as z:
+            z.write(session_out / "dataset.yaml", "dataset.yaml")
+            z.write(session_out / "classes.txt", "classes.txt")
+            for f in (session_out / "images").iterdir():
+                z.write(f, f"images/{f.name}")
+            for f in (session_out / "labels").iterdir():
+                z.write(f, f"labels/{f.name}")
+            for f in (session_out / "annotated").iterdir():
+                z.write(f, f"annotated/{f.name}")
+        
+        print(f"SESSION {session_id}: COMPLETED. Total Time: {time.time() - start_time:.2f}s")
+        
+        # Final result storage (optional, for history)
+        progress_store[session_id]["result_data"] = {
+            "processed_files": processed,
+            "total_images": len(processed),
+            "total_detections": sum(p["detections"] for p in processed),
+            "total_time": time.time() - start_time
+        }
+
+    except Exception as e:
+        print(f"FATAL SESSION ERROR: {e}")
+
+
 @app.post("/api/annotate")
-async def annotate(files: list[UploadFile] = File(...), description: str = None):
+async def annotate(background_tasks: BackgroundTasks, files: list[UploadFile] = File(...)):
     if not files:
         raise HTTPException(400, "No files")
     
@@ -147,7 +279,7 @@ async def annotate(files: list[UploadFile] = File(...), description: str = None)
     (session_out / "labels").mkdir()
     (session_out / "annotated").mkdir()
     
-    # Save files
+    # Save files (Async IO)
     for f in files:
         path = session_dir / f.filename
         content = await f.read()
@@ -168,119 +300,32 @@ async def annotate(files: list[UploadFile] = File(...), description: str = None)
         shutil.rmtree(session_dir, ignore_errors=True)
         raise HTTPException(400, "No images")
     
-    progress_store[session_id] = {"current": 0, "total": len(images), "started": time.time()}
+    # Initialize Progress
+    progress_store[session_id] = {
+        "current": 0, "total": len(images), "status": "queued"
+    }
+
+    # Offload to Background Task so we return immediately
+    background_tasks.add_task(process_session, session_id, session_dir, session_out, images)
     
-    processed = []
-    class_registry = {}
-    next_id = 0
-    
-    for idx, img_path in enumerate(images):
-        try:
-            progress_store[session_id]["current"] = idx
-            
-            img = cv2.imread(str(img_path))
-            if img is None: continue
-            
-            h, w = img.shape[:2]
-            
-            # Get class from filename
-            file_class = get_class_from_filename(img_path.name)
-            if file_class not in class_registry:
-                class_registry[file_class] = next_id
-                next_id += 1
-            class_id = class_registry[file_class]
-            
-            # Run SAM detection
-            # SAM returns masks. We'll find bounding boxes of all masks.
-            results = model(str(img_path), verbose=False, device=DEVICE)
-            
-            labels = []
-            
-            # Ultralytics SAM results
-            for result in results:
-                if result.masks is None: continue
-                
-                # Get all masks
-                masks = result.masks.data.cpu().numpy()  # (N, H, W)
-                
-                for mask in masks:
-                    # Find bounding box of mask
-                    pos_y, pos_x = np.where(mask > 0.5)
-                    if len(pos_x) == 0: continue
-                    
-                    x1, x2 = int(np.min(pos_x)), int(np.max(pos_x))
-                    y1, y2 = int(np.min(pos_y)), int(np.max(pos_y))
-                    
-                    # YOLO format
-                    x_center = ((x1 + x2) / 2) / w
-                    y_center = ((y1 + y2) / 2) / h
-                    box_w = (x2 - x1) / w
-                    box_h = (y2 - y1) / h
-                    
-                    # Clamp
-                    x_center = max(0, min(1, x_center))
-                    y_center = max(0, min(1, y_center))
-                    box_w = max(0, min(1, box_w))
-                    box_h = max(0, min(1, box_h))
-                    
-                    labels.append(f"{class_id} {x_center:.6f} {y_center:.6f} {box_w:.6f} {box_h:.6f}")
-                    draw_box(img, x1, y1, x2, y2, file_class)
-            
-            # Save
-            shutil.copy2(img_path, session_out / "images" / img_path.name)
-            
-            with open(session_out / "labels" / (img_path.stem + ".txt"), 'w') as f:
-                f.write('\n'.join(labels))
-            
-            cv2.imwrite(str(session_out / "annotated" / img_path.name), img)
-            
-            processed.append({"filename": img_path.name, "detections": len(labels)})
-            progress_store[session_id]["current"] = idx + 1
-            
-        except Exception as e:
-            print(f"Error {img_path}: {e}")
-    
-    # Generate classes.txt
-    sorted_classes = sorted(class_registry.items(), key=lambda x: x[1])
-    with open(session_out / "classes.txt", 'w') as f:
-        for name, _ in sorted_classes:
-            f.write(f"{name}\n")
-    
-    # Generate dataset.yaml
-    with open(session_out / "dataset.yaml", 'w') as f:
-        f.write("# AutoMark YOLO Dataset\n")
-        f.write("path: ./\n")
-        f.write("train: images\n")
-        f.write("val: images\n\n")
-        f.write(f"nc: {len(class_registry)}\n\n")
-        f.write("names:\n")
-        for name, cid in sorted_classes:
-            f.write(f"  {cid}: '{name}'\n")
-    
-    # Create ZIP
-    zip_path = session_out / "dataset.zip"
-    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as z:
-        z.write(session_out / "dataset.yaml", "dataset.yaml")
-        z.write(session_out / "classes.txt", "classes.txt")
-        for f in (session_out / "images").iterdir():
-            z.write(f, f"images/{f.name}")
-        for f in (session_out / "labels").iterdir():
-            z.write(f, f"labels/{f.name}")
-        for f in (session_out / "annotated").iterdir():
-            z.write(f, f"annotated/{f.name}")
-    
+    # Return Session ID immediately so frontend can poll
     return {
         "success": True,
         "session_id": session_id,
-        "processed_files": processed,
-        "total_images": len(processed),
-        "total_detections": sum(p["detections"] for p in processed)
+        "message": "Processing started in background",
+        "total_images": len(images)
     }
 
 @app.get("/api/progress/{session_id}")
 async def progress(session_id: str):
     p = progress_store.get(session_id, {})
-    return {"current": p.get("current", 0), "total": p.get("total", 0)}
+    return {
+        "current": p.get("current", 0),
+        "total": p.get("total", 0),
+        "eta": p.get("eta", 0),
+        "avg_time": p.get("avg_time", 0),
+        "elapsed": p.get("elapsed", 0)
+    }
 
 @app.get("/api/download/{session_id}")
 async def download(session_id: str):
