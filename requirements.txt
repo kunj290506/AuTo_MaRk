@@ -1,0 +1,17 @@
+# Core
+fastapi>=0.100.0
+uvicorn>=0.23.0
+python-multipart>=0.0.6
+
+# ML - YOLO for high accuracy
+torch>=2.0.0
+torchvision>=0.15.0
+ultralytics>=8.0.0
+
+# Image Processing
+opencv-python-headless>=4.8.0
+numpy>=1.24.0
+pillow>=10.0.0
+
+# Auth
+python-jose[cryptography]>=3.3.0
