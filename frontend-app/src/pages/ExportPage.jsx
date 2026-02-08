@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import React, { useState } from 'react'
 import './ExportPage.css'
 
-const API_URL = ''
+const API_URL = 'http://localhost:8000'
 
 function ExportPage({ session, annotations, config, onBack, onNewProject }) {
     const [selectedFormat, setSelectedFormat] = useState(config.exportFormat)

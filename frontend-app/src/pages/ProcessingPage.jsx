@@ -1,8 +1,8 @@
-import { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import './ProcessingPage.css'
 
-// Use relative URLs - Vite proxy will forward to backend
-const API_URL = ''
+// Use direct backend URL
+const API_URL = 'http://localhost:8000'
 
 function ProcessingPage({ session, config, onComplete, onCancel }) {
     const [status, setStatus] = useState('connecting')

@@ -1,7 +1,7 @@
-import { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import './ViewerPage.css'
 
-const API_URL = ''
+const API_URL = 'http://localhost:8000'
 
 function ViewerPage({ session, annotations, onExport, onBack }) {
     const [selectedImage, setSelectedImage] = useState(0)

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import React, { useState } from 'react'
 import './ConfigurePage.css'
 
 function ConfigurePage({ session, config, onSubmit, onBack }) {

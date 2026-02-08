@@ -1,7 +1,7 @@
-import { useState, useRef, useCallback } from 'react'
+import React, { useState, useRef, useCallback } from 'react'
 import './UploadPage.css'
 
-const API_URL = ''
+const API_URL = 'http://localhost:8000'
 
 function UploadPage({ onComplete }) {
     const [isDragOver, setIsDragOver] = useState(false)

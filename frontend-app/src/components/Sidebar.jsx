@@ -1,3 +1,4 @@
+import React from 'react'
 import './Sidebar.css'
 
 // Icons as SVG components
