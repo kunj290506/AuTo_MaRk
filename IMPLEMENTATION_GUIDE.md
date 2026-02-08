@@ -331,34 +331,34 @@ football_dataset.zip/
 
 | Test Case | Status |
 |-----------|--------|
-| Valid zip files with images | ⬜ |
-| Invalid/corrupt zip files | ⬜ |
-| Empty zip files | ⬜ |
-| Very large files (1GB+) | ⬜ |
-| Various image formats | ⬜ |
-| Malformed images | ⬜ |
+| Valid zip files with images | [ ] |
+| Invalid/corrupt zip files | [ ] |
+| Empty zip files | [ ] |
+| Very large files (1GB+) | [ ] |
+| Various image formats | [ ] |
+| Malformed images | [ ] |
 
 ### Processing Testing:
 
 | Test Case | Status |
 |-----------|--------|
-| Single object detection | ⬜ |
-| Multiple object detection | ⬜ |
-| Low confidence thresholds | ⬜ |
-| High confidence thresholds | ⬜ |
-| Empty object descriptions | ⬜ |
-| Very specific descriptions | ⬜ |
+| Single object detection | [ ] |
+| Multiple object detection | [ ] |
+| Low confidence thresholds | [ ] |
+| High confidence thresholds | [ ] |
+| Empty object descriptions | [ ] |
+| Very specific descriptions | [ ] |
 
 ### Output Testing:
 
 | Test Case | Status |
 |-----------|--------|
-| COCO format validation | ⬜ |
-| YOLO format validation | ⬜ |
-| VOC format validation | ⬜ |
-| Roboflow compatibility | ⬜ |
-| Download functionality | ⬜ |
-| Dataset integrity | ⬜ |
+| COCO format validation | [ ] |
+| YOLO format validation | [ ] |
+| VOC format validation | [ ] |
+| Roboflow compatibility | [ ] |
+| Download functionality | [ ] |
+| Dataset integrity | [ ] |
 
 ---
 

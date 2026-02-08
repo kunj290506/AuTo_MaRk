@@ -13,3 +13,5 @@ backend/uploads/
 backend/outputs/
 *.log
 .gemini/
+test_data/
+dataset_images/

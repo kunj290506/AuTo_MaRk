@@ -6,12 +6,12 @@ A premium auto-annotation web application using **Grounding DINO** for zero-shot
 
 ## Features
 
-- 🎯 **Zero-Shot Detection** - Describe what you want to find, no training needed
-- 📦 **Multiple Export Formats** - COCO, YOLO, Pascal VOC, Roboflow
-- ⚡ **Fast Processing** - 2-5 seconds per image with GPU
-- 🎨 **Premium UI** - Modern dark theme with glassmorphism
-- 📊 **Real-time Progress** - WebSocket-powered live updates
-- 🖼️ **Visual Review** - Canvas-based annotation viewer with editing
+- **Zero-Shot Detection** - Describe what you want to find, no training needed
+- **Multiple Export Formats** - COCO, YOLO, Pascal VOC, Roboflow
+- **Fast Processing** - 2-5 seconds per image with GPU
+- **Premium UI** - Modern theme with glassmorphism
+- **Real-time Progress** - WebSocket-powered live updates
+- **Visual Review** - Canvas-based annotation viewer with editing
 
 ## Quick Start
 
