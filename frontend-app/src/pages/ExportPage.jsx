@@ -213,29 +213,37 @@ function ExportPage({ session, annotations, config, onBack, onNewProject }) {
                             </svg>
                             Back to Viewer
                         </button>
-                        <button
-                            className="btn btn-primary btn-lg"
-                            onClick={handleExport}
-                            disabled={exporting}
-                        >
-                            {exporting ? (
-                                <>
-                                    <svg className="animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                        <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                        <div className="download-container">
+                            <label className="dl-label">
+                                <input
+                                    type="checkbox"
+                                    className="dl-input"
+                                    checked={exporting || exportComplete}
+                                    onChange={(e) => !exporting && !exportComplete && handleExport()}
+                                    disabled={exporting || exportComplete}
+                                />
+                                <span className="dl-circle">
+                                    <svg
+                                        className="dl-icon"
+                                        aria-hidden="true"
+                                        xmlns="http://www.w3.org/2000/svg"
+                                        fill="none"
+                                        viewBox="0 0 24 24"
+                                    >
+                                        <path
+                                            stroke="currentColor"
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                            strokeWidth="1.5"
+                                            d="M12 19V5m0 14-4-4m4 4 4-4"
+                                        ></path>
                                     </svg>
-                                    Exporting...
-                                </>
-                            ) : (
-                                <>
-                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                                        <polyline points="7,10 12,15 17,10" />
-                                        <line x1="12" y1="15" x2="12" y2="3" />
-                                    </svg>
-                                    Download Dataset
-                                </>
-                            )}
-                        </button>
+                                    <div className="dl-square"></div>
+                                </span>
+                                <p className="dl-title">Download</p>
+                                <p className="dl-title">Done</p>
+                            </label>
+                        </div>
                     </div>
                 </>
             ) : (

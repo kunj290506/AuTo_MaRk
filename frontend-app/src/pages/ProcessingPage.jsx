@@ -4,7 +4,7 @@ import './ProcessingPage.css'
 // Use direct backend URL
 const API_URL = 'http://localhost:8000'
 
-function ProcessingPage({ session, config, onComplete, onCancel }) {
+function ProcessingPage({ session, config, onComplete, onCancel, onReset }) {
     const [status, setStatus] = useState('connecting')
     const [progress, setProgress] = useState(0)
     const [currentImage, setCurrentImage] = useState(null)
@@ -75,6 +75,7 @@ function ProcessingPage({ session, config, onComplete, onCancel }) {
                 const percentage = data.progress || 0
                 setProgress(percentage)
                 setProcessedCount(data.processed_count || 0)
+                setDetectionCount(data.total_detections || 0)
 
                 // Calculate ETA
                 if (startTime && data.processed_count > 0) {
@@ -114,6 +115,14 @@ function ProcessingPage({ session, config, onComplete, onCancel }) {
             console.error('Error fetching annotations:', error)
             setStatus('error')
         }
+    }
+
+    const handleStop = () => {
+        if (pollingRef.current) {
+            clearInterval(pollingRef.current)
+            pollingRef.current = null
+        }
+        setStatus('stopped')
     }
 
     const formatEta = (seconds) => {
@@ -156,27 +165,20 @@ function ProcessingPage({ session, config, onComplete, onCancel }) {
                 {/* Main Progress Card */}
                 <div className="progress-card glass-card animate-slideUp">
                     <div className="progress-visual">
-                        <div className="progress-ring">
-                            <svg viewBox="0 0 120 120">
-                                <circle
-                                    className="ring-bg"
-                                    cx="60" cy="60" r="52"
-                                    strokeWidth="8"
-                                />
-                                <circle
-                                    className="ring-progress"
-                                    cx="60" cy="60" r="52"
-                                    strokeWidth="8"
-                                    strokeDasharray={`${progress * 3.27} 327`}
-                                    strokeLinecap="round"
-                                />
-                            </svg>
+                        <div className="loader-wrapper">
+                            <div className="gradient-loader">
+                                <span></span>
+                                <span></span>
+                                <span></span>
+                                <span></span>
+                            </div>
                             <div className="progress-center">
                                 <span className="progress-value">{Math.round(progress)}%</span>
                                 <span className="progress-label">
-                                    {status === 'connecting' ? 'Starting...' :
-                                        status === 'completed' ? 'Done!' :
-                                            status === 'error' ? 'Error' : 'Processing'}
+                                    {status === 'connecting' ? 'Starting' :
+                                        status === 'completed' ? 'Done' :
+                                            status === 'error' ? 'Error' :
+                                                status === 'stopped' ? 'Stopped' : 'Progress'}
                                 </span>
                             </div>
                         </div>
@@ -188,11 +190,18 @@ function ProcessingPage({ session, config, onComplete, onCancel }) {
                             {status === 'processing' && 'Annotating Images'}
                             {status === 'completed' && 'Annotation Complete!'}
                             {status === 'error' && 'An Error Occurred'}
+                            {status === 'stopped' && 'Process Stopped'}
                         </h2>
                         <p className="progress-subtitle">
                             {status === 'processing' && `Processing ${processedCount} of ${session?.image_count || 0} images`}
                             {status === 'completed' && `Successfully annotated ${session?.image_count || 0} images`}
                             {status === 'error' && 'Please try again or check your configuration'}
+                            {status === 'stopped' && `Stopped at ${processedCount} images. You can retry or go back.`}
+                            {status === 'processing' && processedCount > 10 && detectionCount === 0 && (
+                                <span className="detection-tip">
+                                    Tip: If 0 objects are found, try more specific labels (e.g. "person" instead of "object")
+                                </span>
+                            )}
                         </p>
                     </div>
                 </div>
@@ -303,16 +312,38 @@ function ProcessingPage({ session, config, onComplete, onCancel }) {
                 </div>
 
                 {/* Actions */}
-                {status === 'error' && (
-                    <div className="processing-actions">
+                <div className="processing-actions">
+                    {status === 'processing' && (
+                        <button className="btn btn-danger" onClick={handleStop}>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <rect x="6" y="6" width="12" height="12" />
+                            </svg>
+                            Stop Process
+                        </button>
+                    )}
+
+                    {(status === 'error' || status === 'stopped') && (
                         <button className="btn btn-secondary" onClick={onCancel}>
                             Back to Configure
                         </button>
+                    )}
+
+                    {(status === 'error' || status === 'stopped') && (
                         <button className="btn btn-primary" onClick={handleRetry}>
                             Retry
                         </button>
-                    </div>
-                )}
+                    )}
+
+                    {(status === 'error' || status === 'stopped' || status === 'completed') && (
+                        <button className="btn btn-outline" onClick={onReset}>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                                <path d="M3 3v5h5" />
+                            </svg>
+                            Reset Upload
+                        </button>
+                    )}
+                </div>
             </div>
         </div>
     )

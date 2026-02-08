@@ -64,6 +64,11 @@ function App() {
             config={config}
             onComplete={handleProcessingComplete}
             onCancel={() => navigate('configure')}
+            onReset={() => {
+              setSession(null)
+              setAnnotations(null)
+              navigate('upload')
+            }}
           />
         )
       case 'viewer':

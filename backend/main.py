@@ -237,11 +237,15 @@ async def get_status(session_id: str):
     
     session = sessions[session_id]
     
+    # Calculate detections found so far
+    total_detections = sum(len(ann.get("boxes", [])) for ann in session.get("annotations", {}).values())
+    
     return {
         "session_id": session_id,
         "status": session["status"],
         "image_count": session["image_count"],
         "processed_count": session["processed_count"],
+        "total_detections": total_detections,
         "progress": round(session["processed_count"] / session["image_count"] * 100, 1)
             if session["image_count"] > 0 else 0
     }

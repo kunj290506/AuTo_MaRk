@@ -12,7 +12,7 @@ const pageInfo = {
     },
     processing: {
         title: 'Processing',
-        description: 'Annotating your images with AI'
+        description: 'Automated annotation in progress'
     },
     viewer: {
         title: 'Review Annotations',

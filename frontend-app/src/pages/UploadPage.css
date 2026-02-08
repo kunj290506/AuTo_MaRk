@@ -34,6 +34,26 @@
 .dropzone.drag-over {
     border-color: var(--primary-500);
     transform: scale(1.02);
+    box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1);
+}
+
+@keyframes border-pulse {
+    0% {
+        border-color: var(--border-color);
+    }
+
+    50% {
+        border-color: var(--primary-400);
+        box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1);
+    }
+
+    100% {
+        border-color: var(--border-color);
+    }
+}
+
+.dropzone:hover {
+    animation: border-pulse 2s infinite;
 }
 
 .dropzone-icon {

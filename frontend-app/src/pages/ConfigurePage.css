@@ -68,6 +68,14 @@
 
 .object-input {
     flex: 1;
+    transition: all 0.3s ease;
+    border: 2px solid transparent;
+}
+
+.object-input:focus {
+    border-color: var(--primary-500);
+    box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1);
+    transform: translateY(-1px);
 }
 
 .remove-object-btn {
@@ -202,12 +210,14 @@
 }
 
 .toggle-switch {
-    width: 44px;
-    height: 24px;
+    width: 50px;
+    height: 28px;
     background: var(--bg-secondary);
-    border-radius: var(--radius-full);
+    border-radius: 50px;
     position: relative;
-    transition: background var(--transition-fast);
+    transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
+    border: 1px solid var(--border-color);
 }
 
 .toggle-switch::after {
@@ -215,20 +225,23 @@
     position: absolute;
     top: 2px;
     left: 2px;
-    width: 20px;
-    height: 20px;
+    width: 22px;
+    height: 22px;
     background: var(--text-secondary);
     border-radius: 50%;
-    transition: all var(--transition-fast);
+    transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .toggle-input:checked+.toggle-switch {
     background: var(--primary-500);
+    border-color: var(--primary-500);
 }
 
 .toggle-input:checked+.toggle-switch::after {
-    left: 22px;
+    left: 24px;
     background: white;
+    box-shadow: 0 0 10px rgba(255, 255, 255, 0.8), 0 0 20px rgba(255, 255, 255, 0.4);
 }
 
 /* Format Grid */

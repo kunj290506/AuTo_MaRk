@@ -21,37 +21,63 @@
     margin-bottom: var(--spacing-lg);
 }
 
-.progress-ring {
+/* Gradient Loader */
+.loader-wrapper {
     position: relative;
-    width: 160px;
-    height: 160px;
+    width: 120px;
+    height: 120px;
     margin: 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
-.progress-ring svg {
-    width: 100%;
-    height: 100%;
-    transform: rotate(-90deg);
+.gradient-loader {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    height: 120px;
+    width: 120px;
+    animation: rotate_3922 1.2s linear infinite;
+    background-color: #9b59b6;
+    background-image: linear-gradient(#9b59b6, #84cdfa, #5ad1cd);
 }
 
-.ring-bg {
-    fill: none;
-    stroke: var(--bg-tertiary);
+.gradient-loader span {
+    display: none;
+    /* Removed to eliminate outer blur/glow */
 }
 
-.ring-progress {
-    fill: none;
-    stroke: url(#progressGradient);
-    transition: stroke-dasharray 0.3s ease;
+/* 
+.gradient-loader span:nth-of-type(1) { filter: blur(5px); }
+.gradient-loader span:nth-of-type(2) { filter: blur(10px); }
+.gradient-loader span:nth-of-type(3) { filter: blur(25px); }
+.gradient-loader span:nth-of-type(4) { filter: blur(50px); } 
+*/
+
+.gradient-loader::after {
+    content: "";
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+    background-color: #fff;
+    /* Match card background */
+    border: solid 5px #ffffff;
+    border-radius: 50%;
 }
 
-.progress-ring svg defs {
-    display: block;
-}
+@keyframes rotate_3922 {
+    from {
+        transform: translate(-50%, -50%) rotate(0deg);
+    }
 
-/* Gradient for progress ring */
-.ring-progress {
-    stroke: var(--primary-500);
+    to {
+        transform: translate(-50%, -50%) rotate(360deg);
+    }
 }
 
 .progress-center {
@@ -60,16 +86,14 @@
     left: 50%;
     transform: translate(-50%, -50%);
     text-align: center;
+    z-index: 10;
 }
 
 .progress-value {
     display: block;
-    font-size: 2.5rem;
+    font-size: 2rem;
     font-weight: 800;
-    background: var(--gradient-primary);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+    color: var(--primary-900);
 }
 
 .progress-label {
@@ -77,6 +101,7 @@
     color: var(--text-muted);
     text-transform: uppercase;
     letter-spacing: 0.05em;
+    font-weight: 600;
 }
 
 .progress-title {
@@ -87,6 +112,19 @@
 
 .progress-subtitle {
     color: var(--text-secondary);
+}
+
+.detection-tip {
+    display: block;
+    margin-top: var(--spacing-sm);
+    font-size: 0.75rem;
+    color: var(--accent-orange);
+    background: rgba(234, 88, 12, 0.1);
+    padding: 4px 12px;
+    border-radius: var(--radius-full);
+    width: fit-content;
+    margin-left: auto;
+    margin-right: auto;
 }
 
 /* Stats Grid */
