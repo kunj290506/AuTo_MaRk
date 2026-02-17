@@ -29,7 +29,7 @@ class AnnotationService:
         self._model_loaded = False
         self._sam_loaded = False
         
-        print(f"🔧 Annotation Service initialized")
+        print(f"[INFO] Annotation Service initialized")
         print(f"   Device: {self.device}")
         print(f"   GPU Available: {self.gpu_available}")
         print(f"   Models Directory: {MODELS_DIR.absolute()}")
@@ -49,7 +49,7 @@ class AnnotationService:
             from transformers import AutoProcessor, AutoModelForZeroShotObjectDetection
             
             model_id = "IDEA-Research/grounding-dino-tiny"
-            print(f"📦 Loading Grounding DINO from HuggingFace ({model_id})...")
+            print(f"[INFO] Loading Grounding DINO from HuggingFace ({model_id})...")
             
             self.processor = AutoProcessor.from_pretrained(model_id)
             self.model = AutoModelForZeroShotObjectDetection.from_pretrained(model_id)
@@ -71,11 +71,11 @@ class AnnotationService:
             self.model.eval()
             
             self._model_loaded = True
-            print("✅ Grounding DINO loaded successfully")
+            print("[OK] Grounding DINO loaded successfully")
             return True
             
         except Exception as e:
-            print(f"⚠️ Could not load Grounding DINO: {e}")
+            print(f"[WARN] Could not load Grounding DINO: {e}")
             return False
     
     async def _load_sam(self):
@@ -84,13 +84,13 @@ class AnnotationService:
             return True
         
         if not SAM_CHECKPOINT.exists():
-            print(f"⚠️ SAM checkpoint not found at {SAM_CHECKPOINT}")
+            print(f"[WARN] SAM checkpoint not found at {SAM_CHECKPOINT}")
             return False
         
         try:
             from segment_anything import sam_model_registry, SamPredictor
             
-            print(f"📦 Loading SAM from {SAM_CHECKPOINT}...")
+            print(f"[INFO] Loading SAM from {SAM_CHECKPOINT}...")
             
             # Load SAM model
             sam = sam_model_registry["vit_b"](checkpoint=str(SAM_CHECKPOINT))
@@ -99,19 +99,19 @@ class AnnotationService:
             
             self.sam_predictor = SamPredictor(sam)
             self._sam_loaded = True
-            print("✅ SAM loaded successfully")
+            print("[OK] SAM loaded successfully")
             return True
             
         except Exception as e:
-            print(f"⚠️ Could not load SAM: {e}")
+            print(f"[WARN] Could not load SAM: {e}")
             return False
     
     async def annotate_image(
         self,
         image_path: str,
         objects: List[str],
-        box_threshold: float = 0.35,
-        text_threshold: float = 0.25,
+        box_threshold: float = 0.15,
+        text_threshold: float = 0.15,
         use_sam: bool = True
     ) -> Dict:
         """
@@ -120,7 +120,7 @@ class AnnotationService:
         Returns:
             Dictionary with boxes, labels, scores, and segmentations (polygon contours)
         """
-        # Load image
+        # Load image at full resolution for maximum accuracy
         try:
             image = Image.open(image_path).convert("RGB")
             image_np = np.array(image)
@@ -136,11 +136,11 @@ class AnnotationService:
         if not model_ready:
             return self._generate_mock_annotations(objects, width, height)
         
-        # Run Grounding DINO detection
+        # Run Grounding DINO detection at full resolution
         try:
             detection_result = await self._run_detection(image, objects, box_threshold, width, height)
         except Exception as e:
-            print(f"⚠️ Detection failed: {e}")
+            print(f"[WARN] Detection failed: {e}")
             return self._generate_mock_annotations(objects, width, height)
         
         # Run SAM segmentation if enabled and we have detections
@@ -151,7 +151,7 @@ class AnnotationService:
                     segmentations = await self._run_segmentation(image_np, detection_result["boxes"])
                     detection_result["segmentations"] = segmentations
                 except Exception as e:
-                    print(f"⚠️ Segmentation failed: {e}")
+                    print(f"[WARN] Segmentation failed: {e}")
                     detection_result["segmentations"] = []
             else:
                 detection_result["segmentations"] = []
@@ -229,45 +229,88 @@ class AnnotationService:
         image_np: np.ndarray,
         boxes: List[Dict]
     ) -> List[List[List[float]]]:
-        """Run SAM segmentation for each detected box"""
+        """Run SAM segmentation with iterative refinement for maximum boundary accuracy"""
         
-        # Set image in SAM predictor
+        img_h, img_w = image_np.shape[:2]
+        
+        # Set image in SAM predictor (full resolution)
         self.sam_predictor.set_image(image_np)
         
         segmentations = []
         
         for box in boxes:
-            # Get box coordinates
-            x1, y1, x2, y2 = box["x1"], box["y1"], box["x2"], box["y2"]
-            input_box = np.array([x1, y1, x2, y2])
-            
-            # Run SAM prediction with box prompt
-            masks, scores, _ = self.sam_predictor.predict(
-                point_coords=None,
-                point_labels=None,
-                box=input_box,
-                multimask_output=False
-            )
-            
-            # Get the mask (first one since multimask_output=False)
-            mask = masks[0].astype(np.uint8)
-            
-            # Convert mask to polygon contours
-            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            
-            if contours:
-                # Get the largest contour
-                largest_contour = max(contours, key=cv2.contourArea)
+            try:
+                # Get box coordinates
+                x1, y1, x2, y2 = box["x1"], box["y1"], box["x2"], box["y2"]
                 
-                # Simplify contour to reduce points
-                epsilon = 0.002 * cv2.arcLength(largest_contour, True)
-                approx = cv2.approxPolyDP(largest_contour, epsilon, True)
+                # Pad bounding box by 5% — just enough context for SAM
+                box_w, box_h = x2 - x1, y2 - y1
+                pad_x = box_w * 0.05
+                pad_y = box_h * 0.05
+                padded_x1 = max(0, x1 - pad_x)
+                padded_y1 = max(0, y1 - pad_y)
+                padded_x2 = min(img_w, x2 + pad_x)
+                padded_y2 = min(img_h, y2 + pad_y)
+                input_box = np.array([padded_x1, padded_y1, padded_x2, padded_y2])
                 
-                # Flatten to [x1, y1, x2, y2, ...] format
-                polygon = approx.flatten().tolist()
-                segmentations.append([polygon])
-            else:
-                # No contour found, use empty
+                # --- PASS 1: Initial prediction with box prompt ---
+                masks, quality_scores, low_res_masks = self.sam_predictor.predict(
+                    point_coords=None,
+                    point_labels=None,
+                    box=input_box,
+                    multimask_output=True
+                )
+                
+                # Pick best mask from pass 1
+                best_idx = np.argmax(quality_scores)
+                best_low_res = low_res_masks[best_idx:best_idx+1]
+                
+                # --- PASS 2: Refine with the low-res mask from pass 1 ---
+                # This is SAM's iterative refinement — dramatically improves boundaries
+                masks_refined, quality_refined, _ = self.sam_predictor.predict(
+                    point_coords=None,
+                    point_labels=None,
+                    box=input_box,
+                    mask_input=best_low_res,
+                    multimask_output=False  # Single refined output
+                )
+                
+                # Use the refined mask
+                mask = masks_refined[0].astype(np.uint8)
+                
+                # Light morphological cleanup — close tiny gaps, open tiny noise
+                kernel_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+                kernel_open = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2, 2))
+                mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel_open)
+                mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel_close)
+                
+                # Extract contours — SIMPLE gives clean, representative polygon points
+                contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                
+                if contours:
+                    # Keep significant contours only
+                    min_area = 30
+                    significant = [c for c in contours if cv2.contourArea(c) >= min_area]
+                    
+                    if not significant:
+                        significant = [max(contours, key=cv2.contourArea)]
+                    
+                    polygons = []
+                    for contour in significant:
+                        # Very light Douglas-Peucker simplification
+                        perimeter = cv2.arcLength(contour, True)
+                        epsilon = 0.001 * perimeter  # Keep ~99.9% of detail
+                        approx = cv2.approxPolyDP(contour, epsilon, True)
+                        if len(approx) >= 3:
+                            polygon = approx.flatten().tolist()
+                            polygons.append(polygon)
+                    
+                    segmentations.append(polygons if polygons else [])
+                else:
+                    segmentations.append([])
+                    
+            except Exception as e:
+                print(f"[WARN] Segmentation failed for box: {e}")
                 segmentations.append([])
         
         return segmentations

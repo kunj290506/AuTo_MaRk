@@ -70,25 +70,41 @@ function ViewerPage({ session, annotations, onExport, onBack }) {
 
                 // Draw segmentation polygon if available
                 const segmentation = segmentations[i]
-                if (segmentation && segmentation.length > 0 && segmentation[0].length >= 6) {
-                    const poly = segmentation[0]
+                if (segmentation && segmentation.length > 0) {
+                    ctx.lineJoin = 'round'
+                    ctx.lineCap = 'round'
 
-                    // Draw filled polygon
-                    ctx.beginPath()
-                    ctx.moveTo(poly[0], poly[1])
-                    for (let j = 2; j < poly.length; j += 2) {
-                        ctx.lineTo(poly[j], poly[j + 1])
-                    }
-                    ctx.closePath()
+                    // Draw each polygon contour
+                    segmentation.forEach(poly => {
+                        if (!poly || poly.length < 6) return
 
-                    // Fill with semi-transparent color
-                    ctx.fillStyle = color + '30'
-                    ctx.fill()
+                        ctx.beginPath()
+                        ctx.moveTo(poly[0], poly[1])
+                        for (let j = 2; j < poly.length; j += 2) {
+                            ctx.lineTo(poly[j], poly[j + 1])
+                        }
+                        ctx.closePath()
 
-                    // Draw polygon outline
-                    ctx.strokeStyle = color
-                    ctx.lineWidth = 2
-                    ctx.stroke()
+                        // Fill with semi-transparent color
+                        ctx.fillStyle = color + '25'
+                        ctx.fill()
+
+                        // Draw polygon outline (thicker for visibility)
+                        ctx.strokeStyle = color
+                        ctx.lineWidth = 2.5
+                        ctx.stroke()
+
+                        // Draw control points at each vertex
+                        for (let j = 0; j < poly.length; j += 2) {
+                            ctx.beginPath()
+                            ctx.arc(poly[j], poly[j + 1], 4, 0, Math.PI * 2)
+                            ctx.fillStyle = color
+                            ctx.fill()
+                            ctx.strokeStyle = 'white'
+                            ctx.lineWidth = 1
+                            ctx.stroke()
+                        }
+                    })
                 } else {
                     // Fallback to bounding box
                     ctx.strokeStyle = color

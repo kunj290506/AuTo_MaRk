@@ -71,9 +71,9 @@ def extract_label_from_filename(filename: str) -> str:
 class AnnotationConfig(BaseModel):
     """Configuration for annotation job"""
     objects: list[str]
-    box_threshold: float = 0.35
-    text_threshold: float = 0.25
-    use_sam: bool = False
+    box_threshold: float = 0.15
+    text_threshold: float = 0.15
+    use_sam: bool = True
     export_format: str = "coco"
     min_box_size: int = 10
     remove_overlaps: bool = True
@@ -91,11 +91,11 @@ class SessionInfo(BaseModel):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler"""
-    print("🚀 Auto Annotation Tool Backend Starting...")
-    print("📁 Upload directory:", UPLOAD_DIR.absolute())
-    print("📁 Output directory:", OUTPUT_DIR.absolute())
+    print("[INFO] Auto Annotation Tool Backend Starting...")
+    print("[INFO] Upload directory:", UPLOAD_DIR.absolute())
+    print("[INFO] Output directory:", OUTPUT_DIR.absolute())
     yield
-    print("👋 Shutting down...")
+    print("[INFO] Shutting down...")
 
 
 app = FastAPI(
@@ -210,9 +210,11 @@ async def run_annotation(session_id: str, images: list, config: AnnotationConfig
             filename = os.path.basename(image_path)
             filename_label = extract_label_from_filename(filename)
             
-            # Use filename label if user specified generic 'object', otherwise use user's labels
+            # Always use filename as detection label (image name IS the object)
+            # Combine with user labels if they provided specific ones
             if config.objects and config.objects[0].lower() not in ('object', 'objects', 'item', 'items'):
-                detection_labels = config.objects
+                # Merge filename label + user labels for best accuracy
+                detection_labels = list(set([filename_label] + config.objects))
             else:
                 detection_labels = [filename_label]
             
@@ -221,7 +223,8 @@ async def run_annotation(session_id: str, images: list, config: AnnotationConfig
                 image_path,
                 detection_labels,
                 config.box_threshold,
-                config.text_threshold
+                config.text_threshold,
+                config.use_sam
             )
             
             # Store result
@@ -239,8 +242,8 @@ async def run_annotation(session_id: str, images: list, config: AnnotationConfig
                     "detections": len(result.get("boxes", []))
                 })
             
-            # Minimal delay to yield to other tasks (reduced from 0.1s for speed)
-            await asyncio.sleep(0.01)
+            # Yield to other tasks without unnecessary delay
+            await asyncio.sleep(0)
         
         session["status"] = "completed"
         

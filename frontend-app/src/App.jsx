@@ -13,9 +13,9 @@ function App() {
   const [session, setSession] = useState(null)
   const [config, setConfig] = useState({
     objects: [],
-    boxThreshold: 0.35,
-    textThreshold: 0.25,
-    useSam: false,
+    boxThreshold: 0.15,
+    textThreshold: 0.15,
+    useSam: true,
     exportFormat: 'coco'
   })
   const [annotations, setAnnotations] = useState(null)
