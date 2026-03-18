@@ -319,7 +319,7 @@ function App() {
     }
   }
 
-  const autoAnnotateCurrent = async () => {
+  const autoAnnotateCurrent = useCallback(async () => {
     if (!projectId || !currentImage) return
     setIsBusy(true)
     setMessage('Running SAM2 auto-annotation...')
@@ -348,7 +348,7 @@ function App() {
     } finally {
       setIsBusy(false)
     }
-  }
+  }, [autoClass, confidenceFilter, currentImage, projectId, refreshProject])
 
   const autoAnnotateBatch = async () => {
     if (!projectId) return
@@ -372,7 +372,7 @@ function App() {
     }
   }
 
-  const exportDataset = async (task, downloadCoco = false) => {
+  const exportDataset = useCallback(async (task, downloadCoco = false) => {
     if (!projectId) return
     setIsBusy(true)
     setMessage('Building export...')
@@ -418,7 +418,7 @@ function App() {
     } finally {
       setIsBusy(false)
     }
-  }
+  }, [augment, projectId, refreshStats])
 
   const loadAugPreview = async () => {
     if (!projectId || !currentImage) return
@@ -593,22 +593,22 @@ function App() {
     }
   }
 
-  const deleteSelectedMask = async () => {
+  const deleteSelectedMask = useCallback(async () => {
     if (!projectId || !currentImage || !selectedMaskId) return
     pushUndo(annotation)
     await fetch(`${API_URL}/api/projects/${projectId}/annotations/${currentImage.id}/masks/${selectedMaskId}`, { method: 'DELETE' })
     await loadAnnotation(projectId, currentImage.id)
     await refreshProject(projectId)
     setSelectedMaskId(null)
-  }
+  }, [annotation, currentImage, loadAnnotation, projectId, pushUndo, refreshProject, selectedMaskId])
 
-  const assignClassToMask = async (maskId, className) => {
+  const assignClassToMask = useCallback(async (maskId, className) => {
     if (!annotation) return
     await mutateMasks((next) => {
       const mask = next.masks.find((m) => m.id === maskId)
       if (mask) mask.class_name = className
     })
-  }
+  }, [annotation, mutateMasks])
 
   const addClass = async () => {
     if (!newClassName.trim() || !projectId) return
@@ -728,7 +728,20 @@ function App() {
 
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [annotation, classes, currentImage, deleteSelectedMask, images.length, redoStack, selectedMaskId, undoStack])
+  }, [
+    annotation,
+    assignClassToMask,
+    autoAnnotateCurrent,
+    classes,
+    currentImage,
+    deleteSelectedMask,
+    exportDataset,
+    images.length,
+    redoStack,
+    saveAnnotation,
+    selectedMaskId,
+    undoStack
+  ])
 
   return (
     <div className="studio-root">

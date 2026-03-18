@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { API_URL } from '../config'
 import './ProcessingPage.css'
 
@@ -16,38 +16,7 @@ function ProcessingPage({ session, config, onComplete, onCancel, onReset }) {
     // Bug 16: WebSocket ref
     const wsRef = useRef(null)
 
-    useEffect(() => {
-        if (!session || hasStarted.current) return
-        hasStarted.current = true
-
-        startProcessing()
-
-        return () => {
-            if (pollingRef.current) {
-                clearInterval(pollingRef.current)
-            }
-            // Bug 16: Clean up WebSocket
-            if (wsRef.current) {
-                wsRef.current.close()
-                wsRef.current = null
-            }
-        }
-    }, [session])
-
-    const startProcessing = async () => {
-        startTimeRef.current = Date.now()
-        setStatus('processing')
-
-        // Start annotation job first
-        const success = await startAnnotation()
-
-        if (success) {
-            // Bug 16: Try WebSocket first, fall back to polling
-            connectWebSocket(session.session_id)
-        }
-    }
-
-    const startAnnotation = async () => {
+    const startAnnotation = useCallback(async () => {
         try {
             const response = await fetch(`${API_URL}/api/annotate/${session.session_id}`, {
                 method: 'POST',
@@ -73,10 +42,71 @@ function ProcessingPage({ session, config, onComplete, onCancel, onReset }) {
             setStatus('error')
             return false
         }
-    }
+    }, [config.boxThreshold, config.exportFormat, config.objects, config.textThreshold, config.useSam, session?.session_id])
+
+    const handleComplete = useCallback(async () => {
+        try {
+            const response = await fetch(`${API_URL}/api/annotations/${session.session_id}`)
+            const data = await response.json()
+
+            // Count total detections
+            const totalDetections = Object.values(data.annotations || {}).reduce(
+                (sum, ann) => sum + (ann.boxes?.length || 0), 0
+            )
+            setDetectionCount(totalDetections)
+
+            onComplete(data)
+        } catch (error) {
+            console.error('Error fetching annotations:', error)
+            setStatus('error')
+        }
+    }, [onComplete, session?.session_id])
+
+    const startPollingFallback = useCallback(() => {
+        // Don't start polling if already polling
+        if (pollingRef.current) return
+
+        let isPolling = false
+
+        pollingRef.current = setInterval(async () => {
+            if (isPolling) return
+            isPolling = true
+
+            try {
+                const response = await fetch(`${API_URL}/api/status/${session.session_id}`)
+                const data = await response.json()
+
+                const percentage = data.progress || 0
+                setProgress(percentage)
+                setProcessedCount(data.processed_count || 0)
+                setDetectionCount(data.total_detections || 0)
+
+                // Bug 15: Calculate ETA using ref
+                if (startTimeRef.current && data.processed_count > 0) {
+                    const elapsed = Date.now() - startTimeRef.current
+                    const remaining = (elapsed / data.processed_count) * (session.image_count - data.processed_count)
+                    setEta(Math.ceil(remaining / 1000))
+                }
+
+                if (data.status === 'completed') {
+                    clearInterval(pollingRef.current)
+                    setStatus('completed')
+                    setProgress(100)
+                    setTimeout(() => handleComplete(), 1000)
+                } else if (data.status === 'error') {
+                    clearInterval(pollingRef.current)
+                    setStatus('error')
+                }
+            } catch (error) {
+                console.error('Polling error:', error)
+            } finally {
+                isPolling = false
+            }
+        }, 2000)
+    }, [handleComplete, session?.image_count, session?.session_id])
 
     // Bug 16: WebSocket connection with polling fallback
-    const connectWebSocket = (sessionId) => {
+    const connectWebSocket = useCallback((sessionId) => {
         try {
             const wsUrl = API_URL.replace(/^http/, 'ws')
             const ws = new WebSocket(`${wsUrl}/ws/${sessionId}`)
@@ -126,68 +156,37 @@ function ProcessingPage({ session, config, onComplete, onCancel, onReset }) {
             console.warn('WebSocket not available, using polling')
             startPollingFallback()
         }
-    }
+    }, [handleComplete, session?.image_count, startPollingFallback, status])
 
-    const startPollingFallback = () => {
-        // Don't start polling if already polling
-        if (pollingRef.current) return
+    useEffect(() => {
+        if (!session || hasStarted.current) return
+        hasStarted.current = true
 
-        let isPolling = false
+        const run = async () => {
+            startTimeRef.current = Date.now()
+            setStatus('processing')
 
-        pollingRef.current = setInterval(async () => {
-            if (isPolling) return
-            isPolling = true
+            // Start annotation job first
+            const success = await startAnnotation()
 
-            try {
-                const response = await fetch(`${API_URL}/api/status/${session.session_id}`)
-                const data = await response.json()
-
-                const percentage = data.progress || 0
-                setProgress(percentage)
-                setProcessedCount(data.processed_count || 0)
-                setDetectionCount(data.total_detections || 0)
-
-                // Bug 15: Calculate ETA using ref
-                if (startTimeRef.current && data.processed_count > 0) {
-                    const elapsed = Date.now() - startTimeRef.current
-                    const remaining = (elapsed / data.processed_count) * (session.image_count - data.processed_count)
-                    setEta(Math.ceil(remaining / 1000))
-                }
-
-                if (data.status === 'completed') {
-                    clearInterval(pollingRef.current)
-                    setStatus('completed')
-                    setProgress(100)
-                    setTimeout(() => handleComplete(), 1000)
-                } else if (data.status === 'error') {
-                    clearInterval(pollingRef.current)
-                    setStatus('error')
-                }
-            } catch (error) {
-                console.error('Polling error:', error)
-            } finally {
-                isPolling = false
+            if (success) {
+                // Bug 16: Try WebSocket first, fall back to polling
+                connectWebSocket(session.session_id)
             }
-        }, 2000)
-    }
-
-    const handleComplete = async () => {
-        try {
-            const response = await fetch(`${API_URL}/api/annotations/${session.session_id}`)
-            const data = await response.json()
-
-            // Count total detections
-            const totalDetections = Object.values(data.annotations || {}).reduce(
-                (sum, ann) => sum + (ann.boxes?.length || 0), 0
-            )
-            setDetectionCount(totalDetections)
-
-            onComplete(data)
-        } catch (error) {
-            console.error('Error fetching annotations:', error)
-            setStatus('error')
         }
-    }
+        run()
+
+        return () => {
+            if (pollingRef.current) {
+                clearInterval(pollingRef.current)
+            }
+            // Bug 16: Clean up WebSocket
+            if (wsRef.current) {
+                wsRef.current.close()
+                wsRef.current = null
+            }
+        }
+    }, [session, startAnnotation, connectWebSocket])
 
     const handleStop = () => {
         if (pollingRef.current) {
@@ -226,13 +225,20 @@ function ProcessingPage({ session, config, onComplete, onCancel, onReset }) {
         return () => clearInterval(interval)
     }, [status])
 
-    const handleRetry = () => {
+    const handleRetry = async () => {
+        if (!session) return
         hasStarted.current = false
         setStatus('connecting')
         setProgress(0)
         setProcessedCount(0)
         setDetectionCount(0)
-        startProcessing()
+        startTimeRef.current = Date.now()
+
+        setStatus('processing')
+        const success = await startAnnotation()
+        if (success) {
+            connectWebSocket(session.session_id)
+        }
     }
 
     return (

@@ -1,6 +1,8 @@
 """FastAPI backend for SAM2-powered auto-annotation and YOLO dataset export."""
 
 import io
+import os
+import re
 import shutil
 import tempfile
 import time
@@ -12,7 +14,11 @@ from typing import Dict, List, Optional
 import cv2
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi.requests import Request
+from fastapi.responses import Response
 from fastapi.responses import FileResponse, StreamingResponse
+from PIL import Image
 from pydantic import BaseModel, Field
 
 from services.dataset_service import DatasetService
@@ -29,6 +35,38 @@ sam2_service = SAM2Service(MODELS_DIR)
 dataset_service = DatasetService(sam2_service)
 
 JOBS: Dict[str, Dict] = {}
+
+MAX_IMAGE_FILE_BYTES = int(os.getenv("MAX_IMAGE_FILE_BYTES", str(20 * 1024 * 1024)))
+MAX_UPLOAD_FILES = int(os.getenv("MAX_UPLOAD_FILES", "1000"))
+MAX_ZIP_FILE_BYTES = int(os.getenv("MAX_ZIP_FILE_BYTES", str(1024 * 1024 * 1024)))
+MAX_ZIP_MEMBER_BYTES = int(os.getenv("MAX_ZIP_MEMBER_BYTES", str(25 * 1024 * 1024)))
+MAX_ZIP_TOTAL_UNCOMPRESSED_BYTES = int(os.getenv("MAX_ZIP_TOTAL_UNCOMPRESSED_BYTES", str(2 * 1024 * 1024 * 1024)))
+
+
+def _cors_origins() -> List[str]:
+    raw = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")
+    origins = [item.strip() for item in raw.split(",") if item.strip()]
+    return origins or ["http://localhost:5173"]
+
+
+def _validate_image_bytes(content: bytes) -> bool:
+    try:
+        with Image.open(io.BytesIO(content)) as img:
+            img.verify()
+        return True
+    except Exception:
+        return False
+
+
+def _safe_project_name(name: str) -> str:
+    cleaned = name.strip()
+    if not cleaned:
+        raise HTTPException(status_code=400, detail="Project name cannot be empty")
+    if len(cleaned) > 100:
+        raise HTTPException(status_code=400, detail="Project name is too long")
+    if not re.fullmatch(r"[A-Za-z0-9 _\-.]+", cleaned):
+        raise HTTPException(status_code=400, detail="Project name contains unsupported characters")
+    return cleaned
 
 
 class ProjectCreateRequest(BaseModel):
@@ -101,11 +139,32 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_origins(),
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept"],
 )
+
+app.add_middleware(
+    TrustedHostMiddleware,
+    allowed_hosts=[
+        host.strip()
+        for host in os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
+        if host.strip()
+    ]
+    + ["testserver"],
+)
+
+
+@app.middleware("http")
+async def security_headers_middleware(request: Request, call_next):
+    response: Response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @app.get("/")
@@ -136,7 +195,7 @@ async def list_projects():
 
 @app.post("/api/projects")
 async def create_project(payload: ProjectCreateRequest):
-    project = project_service.create_project(payload.name)
+    project = project_service.create_project(_safe_project_name(payload.name))
     return project
 
 
@@ -158,6 +217,9 @@ async def upload_images(project_id: str, files: List[UploadFile] = File(...)):
     if not project_dir.exists():
         raise HTTPException(status_code=404, detail="Project not found")
 
+    if len(files) > MAX_UPLOAD_FILES:
+        raise HTTPException(status_code=400, detail=f"Too many files. Max allowed: {MAX_UPLOAD_FILES}")
+
     with tempfile.TemporaryDirectory() as tmp:
         temp_paths: List[Path] = []
         for file in files:
@@ -167,6 +229,10 @@ async def upload_images(project_id: str, files: List[UploadFile] = File(...)):
             safe_name = f"{uuid.uuid4()}{suffix}"
             target = Path(tmp) / safe_name
             content = await file.read()
+            if len(content) > MAX_IMAGE_FILE_BYTES:
+                raise HTTPException(status_code=400, detail=f"Image too large: {file.filename}")
+            if not _validate_image_bytes(content):
+                raise HTTPException(status_code=400, detail=f"Invalid image: {file.filename}")
             target.write_bytes(content)
             temp_paths.append(target)
 
@@ -186,10 +252,18 @@ async def upload_zip(project_id: str, file: UploadFile = File(...)):
 
     with tempfile.TemporaryDirectory() as tmp:
         zip_path = Path(tmp) / "images.zip"
-        zip_path.write_bytes(await file.read())
+        zip_content = await file.read()
+        if len(zip_content) > MAX_ZIP_FILE_BYTES:
+            raise HTTPException(status_code=400, detail="ZIP file too large")
+        zip_path.write_bytes(zip_content)
 
         extracted_paths: List[Path] = []
+        total_uncompressed = 0
         with zipfile.ZipFile(zip_path, "r") as zf:
+            info_items = [item for item in zf.infolist() if not item.is_dir()]
+            if len(info_items) > MAX_UPLOAD_FILES:
+                raise HTTPException(status_code=400, detail=f"Too many files in ZIP. Max allowed: {MAX_UPLOAD_FILES}")
+
             for member in zf.namelist():
                 if member.endswith("/"):
                     continue
@@ -199,9 +273,19 @@ async def upload_zip(project_id: str, file: UploadFile = File(...)):
                 if member_path.is_absolute() or ".." in member_path.parts:
                     continue
 
+                info = zf.getinfo(member)
+                if info.file_size > MAX_ZIP_MEMBER_BYTES:
+                    continue
+                total_uncompressed += info.file_size
+                if total_uncompressed > MAX_ZIP_TOTAL_UNCOMPRESSED_BYTES:
+                    raise HTTPException(status_code=400, detail="ZIP content too large after extraction")
+
                 target = Path(tmp) / f"{uuid.uuid4()}{member_path.suffix.lower()}"
                 with zf.open(member) as src, open(target, "wb") as dst:
                     shutil.copyfileobj(src, dst)
+                if not _validate_image_bytes(target.read_bytes()):
+                    target.unlink(missing_ok=True)
+                    continue
                 extracted_paths.append(target)
 
         added = project_service.add_images_from_paths(project_id, extracted_paths)

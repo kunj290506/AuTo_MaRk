@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { API_URL } from '../config'
 import './ViewerPage.css'
 
@@ -45,26 +45,29 @@ function ViewerPage({ session, annotations, onExport, onBack }) {
     const imageAnnotations = currentImage ? annotations?.annotations?.[currentImage] : null
 
     // Filter annotations by class
-    const filteredAnnotations = imageAnnotations ? {
-        ...imageAnnotations,
-        boxes: (imageAnnotations.boxes || []).filter((_, i) => {
-            const label = imageAnnotations.labels?.[i]
-            if (hiddenClasses.has(label)) return false
-            if (classFilter && label !== classFilter) return false
-            return true
-        }),
-        labels: (imageAnnotations.labels || []).filter((label) => {
-            if (hiddenClasses.has(label)) return false
-            if (classFilter && label !== classFilter) return false
-            return true
-        }),
-        scores: (imageAnnotations.scores || []).filter((_, i) => {
-            const label = imageAnnotations.labels?.[i]
-            if (hiddenClasses.has(label)) return false
-            if (classFilter && label !== classFilter) return false
-            return true
-        })
-    } : null
+    const filteredAnnotations = useMemo(() => {
+        if (!imageAnnotations) return null
+        return {
+            ...imageAnnotations,
+            boxes: (imageAnnotations.boxes || []).filter((_, i) => {
+                const label = imageAnnotations.labels?.[i]
+                if (hiddenClasses.has(label)) return false
+                if (classFilter && label !== classFilter) return false
+                return true
+            }),
+            labels: (imageAnnotations.labels || []).filter((label) => {
+                if (hiddenClasses.has(label)) return false
+                if (classFilter && label !== classFilter) return false
+                return true
+            }),
+            scores: (imageAnnotations.scores || []).filter((_, i) => {
+                const label = imageAnnotations.labels?.[i]
+                if (hiddenClasses.has(label)) return false
+                if (classFilter && label !== classFilter) return false
+                return true
+            })
+        }
+    }, [imageAnnotations, classFilter, hiddenClasses])
 
     // UI 10: Compute class stats
     const classStats = {}
@@ -214,7 +217,7 @@ function ViewerPage({ session, annotations, onExport, onBack }) {
         const filename = currentImage.split(/[/\\]/).pop()
         img.src = `${API_URL}/uploads/${session.session_id}/${filename}`
 
-    }, [currentIndex, currentImage, filteredAnnotations, showLabels, selectedAnnotation, zoom, classFilter, hiddenClasses])
+    }, [currentIndex, currentImage, filteredAnnotations, showLabels, selectedAnnotation, zoom, classFilter, hiddenClasses, session?.session_id, sortedClasses])
 
     // Bug 17: Mouse wheel zoom
     const handleWheel = useCallback((e) => {
